@@ -1,0 +1,49 @@
+# Build stage
+FROM node:18-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY ui/package.json ui/package-lock.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy source code
+COPY ui/ .
+
+# Build the application
+RUN npm run build
+
+# Runtime stage
+FROM nginx:alpine
+
+# Copy nginx configuration
+COPY infra/docker/nginx.conf /etc/nginx/nginx.conf
+
+# Copy built application
+COPY --from=builder /app/build /usr/share/nginx/html
+
+# Create non-root user
+RUN addgroup -g 1000 -S appgroup && \
+    adduser -u 1000 -S appuser -G appgroup
+
+# Change ownership
+RUN chown -R appuser:appgroup /usr/share/nginx/html /var/cache/nginx /var/log/nginx /etc/nginx/conf.d
+
+# Create nginx pid directory
+RUN mkdir -p /var/run/nginx && chown -R appuser:appgroup /var/run/nginx
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

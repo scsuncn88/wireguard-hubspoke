@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  database:
+    image: postgres:15-alpine
+    container_name: wg-sdwan-db-dev
+    environment:
+      POSTGRES_DB: wireguard_sdwan
+      POSTGRES_USER: wg_admin
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wg_admin -d wireguard_sdwan"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: wg-sdwan-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  controller:
+    build:
+      context: ../../
+      dockerfile: ./infra/docker/Dockerfile.controller
+    container_name: wg-sdwan-controller-dev
+    environment:
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: wireguard_sdwan
+      DB_USER: wg_admin
+      DB_PASSWORD: dev_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOG_LEVEL: debug
+      DEBUG_MODE: true
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ../../:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  ui:
+    build:
+      context: ../../ui
+      dockerfile: ../infra/docker/Dockerfile.ui.dev
+    container_name: wg-sdwan-ui-dev
+    environment:
+      REACT_APP_API_URL: http://localhost:8080/api/v1
+      REACT_APP_WEBSOCKET_URL: ws://localhost:8080/ws
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../../ui:/app
+      - /app/node_modules
+    depends_on:
+      - controller
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: wg-sdwan-prometheus-dev
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: wg-sdwan-grafana-dev
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:

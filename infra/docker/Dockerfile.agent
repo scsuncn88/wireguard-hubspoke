@@ -1,0 +1,59 @@
+# Build stage
+FROM golang:1.21-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+COPY agent/go.mod agent/go.sum ./agent/
+COPY common/go.mod ./common/
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application
+WORKDIR /app/agent
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o agent main.go
+
+# Runtime stage
+FROM alpine:latest
+
+# Install runtime dependencies including WireGuard
+RUN apk --no-cache add ca-certificates tzdata wireguard-tools iptables
+
+# Create user
+RUN addgroup -g 1000 -S appgroup && \
+    adduser -u 1000 -S appuser -G appgroup
+
+# Create directories
+RUN mkdir -p /etc/wireguard /var/lib/wireguard-sdwan /var/log/wireguard-sdwan && \
+    chown -R appuser:appgroup /etc/wireguard /var/lib/wireguard-sdwan /var/log/wireguard-sdwan
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from builder
+COPY --from=builder /app/agent/agent .
+
+# Change ownership
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user (Note: WireGuard operations require root, adjust as needed)
+# USER appuser
+
+# Expose health check port
+EXPOSE 8081
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8081/health || exit 1
+
+# Run the application
+CMD ["./agent", "--daemon"]

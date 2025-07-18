@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  database:
+    image: postgres:15-alpine
+    container_name: wg-sdwan-db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-wireguard_sdwan}
+      POSTGRES_USER: ${DB_USER:-wg_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - wg-sdwan
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-wg_admin} -d ${DB_NAME:-wireguard_sdwan}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: wg-sdwan-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - wg-sdwan
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  controller:
+    build:
+      context: ../../
+      dockerfile: ./infra/docker/Dockerfile.controller
+    container_name: wg-sdwan-controller
+    environment:
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-wireguard_sdwan}
+      DB_USER: ${DB_USER:-wg_admin}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CONTROLLER_HOST: 0.0.0.0
+      CONTROLLER_PORT: 8080
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET}
+      WG_SUBNET: ${WG_SUBNET:-10.100.0.0/16}
+      WG_PORT_RANGE_START: ${WG_PORT_RANGE_START:-51820}
+      WG_PORT_RANGE_END: ${WG_PORT_RANGE_END:-51870}
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - wg-sdwan
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ../../
+      dockerfile: ./infra/docker/Dockerfile.ui
+    container_name: wg-sdwan-ui
+    environment:
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8080/api/v1}
+      REACT_APP_WEBSOCKET_URL: ${REACT_APP_WEBSOCKET_URL:-ws://localhost:8080/ws}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - controller
+    networks:
+      - wg-sdwan
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: wg-sdwan-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - wg-sdwan
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - controller
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: wg-sdwan-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - wg-sdwan
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  wg-sdwan:
+    driver: bridge

@@ -1,0 +1,133 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+vendor/
+
+# Go workspace file
+go.work
+
+# Build artifacts
+build/
+dist/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# React build
+ui/build/
+ui/dist/
+
+# Coverage reports
+coverage/
+coverage.out
+*.cover
+
+# Temporary files
+tmp/
+temp/
+
+# Docker
+docker-compose.override.yml
+
+# WireGuard keys and configs
+*.key
+*.pub
+*.conf
+wg*.conf
+
+# Certificates
+*.crt
+*.pem
+*.p12
+*.pfx
+
+# Configuration files with secrets
+config.yaml
+config.json
+secrets.yaml
+
+# Backup files
+*.backup
+*.bak
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+venv_linux/
+ENV/
+env.bak/
+venv.bak/
+.venv
+
+# Documentation build
+docs/_build/
+docs/build/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+
+# Kubernetes
+*.kubeconfig
+
+# Monitoring data
+prometheus_data/
+grafana_data/
+
+# Test results
+test-results/
+junit.xml
+
+# Profiling
+*.prof
+
+# Local development overrides
+docker-compose.local.yml
+local.envContext-Engineering-Intro/
